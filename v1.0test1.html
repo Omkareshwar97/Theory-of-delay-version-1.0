@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>APNIC Policy Drafting Assistant v1.0</title>
+  <style>
+    body { font-family: Arial,sans-serif; background:#f7f9fc; margin:0; padding:30px;}
+    .container { max-width:800px; margin:auto; background:#fff; padding:24px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.07);}
+    .section { margin-bottom:30px;}
+    .inputBox, textarea { width:100%; font-size:1.08em; margin-top:8px; margin-bottom:16px; padding:10px; border-radius:6px; border:1px solid #dde;}
+    .btn { background:#36a; color:#fff; border:none; padding:10px 18px; border-radius:6px; font-size:1em; cursor:pointer; margin-right:8px;}
+    .btn:disabled {background: #999;}
+    .label {font-weight:600;}
+    .processing {color:#36a; font-weight:600;}
+    .hidden {display:none;}
+    .ai-question {background:#f3f7fa; border-left:4px solid #36a; padding:12px; margin-bottom:18px;}
+    .actions {margin-top:20px;}
+    #pdfText {font-size:0.97em; background:#eee; padding:10px; border-radius:6px;}
+  </style>
+  <script src="pdfjs/pdf.js"></script>
+</head>
+<body>
+<div class="container">
+  <h1>AI Powered Policy Builder for APNIC</h1>
+
+  <!-- Stage 1: Policy Submission -->
+  <div class="section" id="submissionStage">
+    <div class="label">Describe your Policy idea:</div>
+    <textarea id="policyIdea" rows="4" placeholder="Draft your policy proposal here..."></textarea>
+    <div class="label">Optional: Upload supporting document (PDF)</div>
+    <input type="file" id="supportDoc" class="inputBox" accept="application/pdf" onchange="readPDF(event)">
+    <div id="pdfText"></div>
+    <div class="actions">
+      <button class="btn" onclick="goNext('submissionStage','processingStage')">Next</button>
+    </div>
+  </div>
+
+  <!-- Stage 2: AI Processing Indicator -->
+  <div class="section hidden" id="processingStage">
+    <div class="processing">AI Review & Segmentation is processing...</div>
+    <div class="actions">
+      <button class="btn" onclick="goBack('processingStage','submissionStage')">Back</button>
+      <button class="btn" id="procNextBtn" onclick="goNext('processingStage','reviewStage')" disabled>Next</button>
+    </div>
+  </div>
+
+  <!-- Stage 3: AI Review & Segmentation -->
+  <div class="section hidden" id="reviewStage">
+    <div class="label">AI Review & Segmentation</div>
+    <div class="ai-question">
+      <div>Breaks your input and uploaded document into clear sections. Highlights statements and facts/figures from the PDF.</div>
+      <div id="aiSegmentation"></div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="goBack('reviewStage','processingStage')">Back</button>
+      <button class="btn" onclick="goNext('reviewStage','questionStage')">Next</button>
+    </div>
+  </div>
+
+  <!-- Stage 4: AI Questions -->
+  <div class="section hidden" id="questionStage">
+    <div class="label">AI-generated key questions (please answer):</div>
+    <div class="ai-question">
+      <label>Q1: What impact do you want to bring? (based on your idea and the document)</label>
+      <input type="text" id="q1resp" class="inputBox" placeholder="Type response here">
+    </div>
+    <div class="ai-question">
+      <label>Q2: How will this affect APNIC/the Internet? (consider document content)</label>
+      <input type="text" id="q2resp" class="inputBox" placeholder="Type response here">
+    </div>
+    <div class="ai-question">
+      <label>Q3: Any known close line conflicts with current policies? (use facts, document references)</label>
+      <input type="text" id="q3resp" class="inputBox" placeholder="Type response here">
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="goBack('questionStage','reviewStage')">Back</button>
+      <button class="btn" onclick="goNext('questionStage','previewStage')">Next</button>
+    </div>
+  </div>
+
+  <!-- Stage 5: Preview & Export -->
+  <div class="section hidden" id="previewStage">
+    <div class="label">Preview of Draft (includes PDF content):</div>
+    <textarea id="finalDraft" rows="8" class="inputBox"></textarea>
+    <div class="actions">
+      <button class="btn" onclick="goBack('previewStage','questionStage')">Back</button>
+      <button class="btn" onclick="copyDraft()">Copy Draft</button>
+      <button class="btn" onclick="exportDraft()">Export</button>
+      <button class="btn" onclick="flagMistake()">Flag AI Mistake</button>
+    </div>
+  </div>
+
+</div>
+<script>
+let extractedPdfText = '';
+function goNext(fromId, toId){
+  document.getElementById(fromId).classList.add('hidden');
+  document.getElementById(toId).classList.remove('hidden');
+  if(fromId==='processingStage'){
+    setTimeout(() => {
+      document.getElementById('processingStage').classList.add('hidden');
+      document.getElementById('reviewStage').classList.remove('hidden');
+      const idea = document.getElementById('policyIdea').value;
+      const seg = `<b>Purpose:</b> ${idea.substr(0, idea.length/3)}<br>
+                  <b>Scope:</b> ${idea.substr(idea.length/3, idea.length/3)}<br>
+                  <b>Impact (with doc):</b> ${idea.substr(2*idea.length/3)}<br>
+                  <b>Supporting Doc Extract:</b> ${extractedPdfText ? extractedPdfText.substring(0,300)+"..." : "(none uploaded)"}`;
+      document.getElementById('aiSegmentation').innerHTML = seg;
+    }, 1200);
+  }
+  if(fromId==='questionStage' && toId==='previewStage'){
+    const idea = document.getElementById('policyIdea').value;
+    const q1 = document.getElementById('q1resp').value;
+    const q2 = document.getElementById('q2resp').value;
+    const q3 = document.getElementById('q3resp').value;
+    let preview = `Policy Idea:
+${idea}
+
+Impact: ${q1}
+Effect on APNIC/Internet: ${q2}
+Conflicts: ${q3}`;
+    if(extractedPdfText) preview += `
+
+Supporting Document Extract:
+${extractedPdfText.substring(0,600) + (extractedPdfText.length>600?'...':'')}`;
+    document.getElementById('finalDraft').value = preview;
+  }
+  if(toId==='processingStage'){
+    document.getElementById('procNextBtn').disabled = true;
+    setTimeout(()=>{document.getElementById('procNextBtn').disabled = false;},1200);
+  }
+}
+function goBack(fromId, toId){
+  document.getElementById(fromId).classList.add('hidden');
+  document.getElementById(toId).classList.remove('hidden');
+}
+function copyDraft() {
+  const draft = document.getElementById('finalDraft').value;
+  navigator.clipboard.writeText(draft);
+  alert("Draft copied to clipboard!");
+}
+function exportDraft() {
+  const text = document.getElementById('finalDraft').value;
+  const blob = new Blob([text], {type:"text/plain"});
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "APNIC_Policy_Draft.txt";
+  link.click();
+}
+function flagMistake() {
+  alert("AI mistake flagged! Thank you for your feedback.");
+}
+
+// PDF.js to extract text from uploaded PDF
+function readPDF(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(){
+    const typedarray = new Uint8Array(reader.result);
+    pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+      pdf.getPage(1).then(function(page) {
+        page.getTextContent().then(function(textContent) {
+          let text = textContent.items.map(item=>item.str).join(' ');
+          document.getElementById('pdfText').innerText = text.substring(0,600)+(text.length>600?'...':'');
+          extractedPdfText = text; // Save for all later use
+        });
+      });
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+</script>
+</body>
+</html>
